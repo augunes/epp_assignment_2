@@ -1,24 +1,26 @@
 from pathlib import Path
 import pandas as pd
+import numpy as np
 
+pd.options.mode.copy_on_write = True
 
-def _clean_bpi(series: pd.Series) -> pd.Series:
-    """Helper: convert special missing codes (negative values) to pandas NA."""
-    cleaned = series.copy()
-    cleaned = cleaned.mask(cleaned < 0)
-    return cleaned
-
+def _to_pandas_missing(s: pd.Series) -> pd.Series:
+    """Replace negative values with pandas missing codes."""
+    # In this dataset, negative numbers indicate missing data
+    return s.where(~(s < 0), other=pd.NA)
 
 def clean_chs_data(raw: pd.DataFrame) -> pd.DataFrame:
     """
-    Clean the CHS dataset and return a new DataFrame
-    with cleaned BPI variables, momid, age,
-    and a MultiIndex [childid, year].
+    Clean the CHS data by renaming variables and setting the index.
+
+    This function selects the relevant columns, maps them to intelligible
+    names, handles missing values, and creates a MultiIndex based on
+    child identifier and year.
     """
     df = raw.copy()
 
-    # Mapping raw → sensible names
-    mapping = {
+    # Map BPI variables to sensible names
+    bpi_map = {
         "bpiA": "bpi_antisocial_chs",
         "bpiB": "bpi_anxiety_chs",
         "bpiC": "bpi_headstrong_chs",
@@ -26,39 +28,43 @@ def clean_chs_data(raw: pd.DataFrame) -> pd.DataFrame:
         "bpiE": "bpi_peer_chs",
     }
 
-    clean = pd.DataFrame()
+    # Clean BPI variables: convert special missings to NA
+    for raw_name, clean_name in bpi_map.items():
+        df[clean_name] = _to_pandas_missing(df[raw_name])
 
-    # Clean BPI columns
-    for raw_name, new_name in mapping.items():
-        clean[new_name] = _clean_bpi(df[raw_name])
+    # Clean momid and convert to nullable integer
+    df["momid"] = df["momid"].astype("Int64")
 
-    # momid with a good dtype (nullable integer)
-    clean["momid"] = df["momid"].astype("Int64")
+    # Age can be integer (two-year bins)
+    df["age"] = df["age"].astype("Int64")
 
-    # age (integer bins)
-    clean["age"] = df["age"].astype("Int64")
+    # Set index using nullable integers
+    df["childid"] = df["childid"].astype("Int64")
+    df["year"] = df["year"].astype("Int64")
+    df = df.set_index(["childid", "year"])
 
-    # Index variables with suitable dtypes
-    clean["childid"] = df["childid"].astype("Int64")
-    clean["year"] = df["year"].astype("Int64")
+    # Keep only relevant columns (plus momid and age)
+    keep_cols = ["momid", "age"] + list(bpi_map.values())
+    df = df[keep_cols]
 
-    # Set MultiIndex
-    clean = clean.set_index(["childid", "year"])
-
-    return clean
-
+    return df.sort_index()
 
 if __name__ == "__main__":
-    # project root is the folder where this script sits
     project_root = Path(__file__).resolve().parent
+    bld_dir = project_root / "bld"
 
-    # load raw dataset from bld (created by unzip.py)
-    raw_path = project_root / "bld" / "chs_data.dta"
-    raw_df = pd.read_stata(raw_path)
 
-    # clean the data
-    clean_df = clean_chs_data(raw_df)
+    chs_path = bld_dir / "chs_data.dta"
+    
+    if not chs_path.exists():
+         chs_path = bld_dir / "original_data" / "chs_data.dta"
 
-    # save clean dataset (generated → stays in bld, ignored by git)
-    out_path = project_root / "bld" / "chs_data_clean.csv"
-    clean_df.to_csv(out_path)
+    if chs_path.exists():
+        raw_chs = pd.read_stata(chs_path)
+        clean_chs = clean_chs_data(raw_chs)
+
+        out_path = bld_dir / "chs_clean.parquet"
+        clean_chs.to_parquet(out_path)
+        print(f"Success! Cleaned data saved to: {out_path}")
+    else:
+        print(f"Error: Could not find 'chs_data.dta' in {bld_dir}")
