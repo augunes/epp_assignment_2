@@ -1,53 +1,29 @@
-from pathlib import Path
 import zipfile
+from pathlib import Path
+import pandas as pd
 
-def ensure_bld_directory(base_path: Path) -> Path:
+# modern pandas settings
+pd.options.mode.copy_on_write = True
+
+def unzip_original_data(zip_path: Path, target_dir: Path) -> None:
     """
-    Ensure that the build (bld) directory exists in the project root.
+    Extract the compressed original data to the specified target directory.
 
-    Parameters
-    ----------
-    base_path : pathlib.Path
-        Path to the project root directory.
-
-    Returns
-    -------
-    pathlib.Path
-        Path to the existing or newly created bld directory.
+    This function takes the path to the source zip file and the destination
+    folder. It creates the destination folder if it does not exist and
+    unpacks all contents of the archive into it.
     """
-    bld_path = base_path / "bld"
-    bld_path.mkdir(exist_ok=True)
-    return bld_path
+    # No side effects on inputs
+    target_dir.mkdir(parents=True, exist_ok=True)
 
-
-def unzip_original_data(zip_path: Path, output_dir: Path) -> None:
-    """
-    Unzip the contents of original_data.zip into the bld directory.
-
-    Parameters
-    ----------
-    zip_path : pathlib.Path
-        Path to the ZIP file located in original_data/original_data.zip.
-
-    output_dir : pathlib.Path
-        The directory where the extracted files will be written.
-        Must be the bld directory.
-
-    Returns
-    -------
-    None
-    """
-    with zipfile.ZipFile(zip_path, 'r') as zf:
-        zf.extractall(output_dir)
-
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        zf.extractall(target_dir)
 
 if __name__ == "__main__":
-    project_root = Path(__file__).resolve().parents[0]
+    project_root = Path(__file__).resolve().parent
+    
+    # UPDATED LINE: Removed "src" to match your specific folder structure
+    zip_path = project_root / "original_data" / "original_data.zip"
+    bld_dir = project_root / "bld"
 
-    zip_file = project_root / "original_data" / "original_data.zip"
-    bld_dir = ensure_bld_directory(project_root)
-
-    unzip_original_data(zip_file, bld_dir)
-
-
-
+    unzip_original_data(zip_path, bld_dir)
